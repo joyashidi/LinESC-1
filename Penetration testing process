@@ -1,0 +1,212 @@
+1.1 Introduction
+This report contains the items that were used during the penetration test to gain root access to the LinESC virtual machine without the login credentials known, while making use of a host virtual machine. The purpose of this report is to document the entire penetration testing process from the information gathering stage to gaining root access of the virtual machine.
+
+1.2 Objective
+The objective of this assessment is to perform an internal penetration test against the LinESC network. This task should simulate an actual penetration test and how you would start from beginning to end, including the overall report.
+
+2 High-Level Summary
+I was tasked with performing an internal penetration test towards LinESC virtual machine. An internal penetration test is a dedicated attack against internally connected systems. The focus of this test was to perform attacks, similar to those of a hacker and attempt to infiltrate LinESC. My overall objective was to evaluate the system, gain initial access and find seven (7) different ways to escalate my privileges.
+Throughout this assessment, I identified several vulnerabilities on LinESC, many of which stemmed from misconfigurations and exposed services. By mounting an NFS share and analyzing the .bash_history and other files, I discovered paths to escalate privileges without direct user account access. This included locat-ing an executable with SUID privileges, which I leveraged to execute commands as the root user, ultimately gaining root-level access to the machine.
+These findings illustrate critical gaps in both access control and privilege management, emphasizing the importance of securing shared directories, updating configurations, and monitoring user activities on sen-sitive systems.
+
+3 Methodologies
+I utilized a widely adopted approach to performing penetration testing that is effective in testing how well the environments are secure. Below is a breakout of how I was able to identify and exploit the variety of systems and includes all individual vulnerabilities found.
+
+3.1 Information Gathering
+The information gathering portion of a penetration test focuses on identifying the scope of the penetration test. During this penetration test, I was tasked with exploiting the virtual machine. The specific IP addresses were:
+Exam Virtual Machine: 192.168.56.107 Host Virtual Machine: 192.168.56.101
+
+3.2 Service Enumeration
+The service enumeration portion of a penetration test focuses on gathering information about what services are alive on a system or systems. In this phase, a deeper examination of each service running on the target VM was conducted to identify potential vulnerabilities or misconfigurations. The following ports and services were identified:
+-
+SSH (TCP Port 22): This port is used for remote connection and secure access. If weak passwords or default credentials are used, it can be vulnerable to brute-force attacks. However, misconfigurations such as improper permissions on SSH keys, can be exploited.
+-
+RPCBIND (TCP Port 111): This port is used to map RPC requests to the right services, which can be a critical service for applications like NFS. RPC services can reveal important information about what other services are available, especially when it’s used alongside NFS.
+-
+NFS (TCP Port 2049): This port allows sharing of files between systems on a network, but misconfigurations can lead to unauthorized access. If the shares are accessible without restrictions, sensitive files can be exposed.
+-
+Port 32814, Port 37554, and Port 55338
+
+3.3 Penetration
+The penetration testing portions of the assessment focus heavily on gaining access to the target system. During this penetration test, I was able to successfully gain access to the LinESC machine.
+
+3.4 Maintaining Access
+Maintaining access to a system is important to us as attackers, ensuring that we can get back into a system after it has been exploited is invaluable. The maintaining access phase of the penetration test focuses on ensuring that once the focused attack has occurred (i.e. a buffer overflow), we have administrative access over the system again. Many exploits may only be exploitable once and we may never be able to get back into a system after we have already performed the exploit.
+I implemented techniques to maintain access, ensuring that I could return to the system if needed. This involved creating a persistent backdoor, such as a new user account or modifying existing services, to avoid detection and ensure continued control over the system for further testing.
+
+4 Independent Challenges
+
+4.1
+Target #1 – 192.168.56.107
+
+4.1.1
+Initial Access – SSH Key-Based Authentication
+Vulnerability Explanation: The SSH server is protected with a password which can be gotten by accessing the NFS shares. It has some sensitive information like credentials store. Which enables gaining access to the system.
+Vulnerability Fix: The access to sensitive NFS shares should be restricted by implementing proper access controls, ensuring that only authorized users can access the data, and encrypting sensitive files to protect credentials from unauthorized exposure.
+Severity: Critical
+Steps to reproduce the attack: Run the initial service scan I discovered. Showmount was used to get the user and passwords file from NFS share and used those credentials for ssh login access.
+
+4.1.2 Service Enumeration
+Port Scan Results
+IP Address
+Ports Open
+192.168.56.107
+TCP: 22, 111, 2049, 32814, 37554, 55338
+I ran nmap to scan the target and found a few ports open. nmap -Pn -sVC -p- -T4 192.168.56.107
+
+
+4.1.3
+Initial Access – SSH Key-Based Authentication
+
+I gained access to files by leveraging NFS (Network File System).
+To identify exported directories that could be mounted locally, I executed the following command: └─$ showmount -e 192.168.56.107
+I discovered a directory associated with the user 'muhammad' on the target system and created a corresponding directory on my machine to mount the NFS share: └─$ mkdir /mnt/nfs_share
+Next, I mounted the NFS share locally to view its contents: └─$ sudo mount -o rw 192.168.56.107:/home/muhammad /mnt/nfs_share
+I then attempted to navigate further by listing the files within the mounted directory:
+
+└─$ ls -la /mnt/nfs_share
+
+After mounting the NFS share, I proceeded to view the files present in the directory. I began by examining the .bash_history file:
+└─$ cat /mnt/nfs_share/.bash_history
+
+
+The output from the .bash_history file indicated the presence of a SUID binary. Executing su root and sudo -l suggested that the user ‘muhammad’ likely possesses root privileges. Additionally, the contents of the vuln directory hinted at potential methods for escalating privileges.
+To further investigate, I listed the files in the vuln directory:
+
+└─$ ls -la /mnt/nfs_share/vuln
+
+I navigated through the files in the vuln directory, primarily focusing on files 3 and 4:
+
+I discovered a password for the user muhammad and continued my investigation by examining the script.sh file:
+
+I used SSH to log in with ‘muhammad’ as the username and ‘nasef’ as the password:
+
+I successfully logged in as the user ‘muhammad’.
+
+4.1.4 Privilege Escalation – Sudo Vulnerabilities
+To escalate privileges, I first checked the current user's sudo rights with the following command:
+sudo –l
+After confirming the available sudo privileges, I navigated to the directory containing potential vulnerabilities:
+cd /home/muhammad/vuln/2/
+I listed the files in the directory:
+ls
+I examined the contents of the sudo.c file:
+cat sudo.c
+Next, I executed the vulnerable sudo binary:
+sudo /home/muhammad/vuln/2/sudo
+
+To verify that I had successfully escalated my privileges to root, I ran:
+whoami
+Finally, I used ifconfig to confirm that I had root access on the target virtual machine:
+ifconfig
+
+4.1.5 Privilege Escalation – Exploiting Readable /etc/shadow
+I changed to the /tmp directory, which is commonly used for storing temporary files during system operations. I then listed the contents of the /etc/ directory to locate the shadow files. The /etc/shadow file is critical for system security as it contains hashed passwords for all user accounts, including the root user. Viewing this file can reveal password hashes, which can potentially be cracked to gain unauthorized access.
+Upon examining the contents of the /etc/shadow file, I found the hashed password for the root user. I subsequently used John the Ripper to crack the hash and successfully logged in as the root user with the recovered password.
+cd /tmp
+ls -la /etc/ | grep shadow
+cat /etc/shadow
+
+After obtaining the hash for the root user, I copied it into a file named root_hash.txt for analysis:
+
+vim root_hash.txt
+
+Using John the Ripper, I attempted to crack the hash stored in root_hash.txt. The command executed was as follows:
+john --wordlist=/usr/share/wordlists/rockyou.txt --format=md5crypt /home/kali/root_hash.txt
+The process successfully revealed the root password as “chicken.”
+
+I then attempted to log in with the credentials obtained:
+su root
+This command allowed me to switch to the root user, providing root access to the system.
+
+4.1.6 Privilege Escalation – SUID Privileges
+To identify potential privilege escalation opportunities through SUID (Set User ID) permissions, I executed the following command to list all files on the system that possess SUID privileges:
+find / -perm -4000 2> /dev/null
+After gathering this information, I navigated to a specific directory where I had previously identified a SUID binary:
+cd /home/muhammad/vuln/1/
+ls -la
+cat suid.c
+The contents of suid.c provided insight into how the binary operates. I then executed the SUID binary:
+./suid
+Following execution, I verified my current user identity and checked my privileges:
+
+ls
+whoami
+
+4.1.7 Privilege Escalation – Cronjobs
+To explore potential privilege escalation opportunities through Cron jobs, I examined the system's crontab file, which schedules periodic tasks that can be executed with elevated privileges. I executed the following command to view the contents of the crontab:
+cat /etc/crontab
+
+Since the password file was located in the specified directory, I changed to that location for further examination. In a separate terminal session, I created a new password to ensure that I could access the system with elevated privileges.
+
+I edited the password file using vim; vim passwd
+In the editor, I created a new user entry, saved the changes, and subsequently logged in with the newly created user.
+
+4.1.8 Privilege Escalation – SSH Vulnerabilities
+I discovered a private SSH key that provided an opportunity for privilege escalation. Using the root username and the identified private key, I executed the following command to gain root access:
+ssh root@192.168.56.107 -i key
+
+I gained root access!
+
+4.1.9 Privilege Escalation – Kernel Exploitation
+To assess potential kernel vulnerabilities on the target virtual machine, I began by gathering information about the current kernel version and architecture using the following commands:
+uname -a
+uname –r
+
+With the kernel version and architecture in hand, I used Searchsploit to search for known exploits associated with this specific kernel version.
+
+Unfortunately, this search did not yield any relevant exploits. Therefore, I proceeded to perform a broader search on Google to identify any known vulnerabilities related to the kernel version of the target VM.
+
+I discovered the "Dirty COW" exploit, a known privilege escalation vulnerability in Linux.
+I then proceeded to download the exploit script and saved it in a file named c0w.c for further exami-nation:
+
+After downloading the "Dirty COW" exploit script, I reviewed the instructions at the top of the script for guidance on its implementation. To compile the exploit, I executed the following command:
+gcc -pthread c0w.c -o c0w
+This command compiles the C source file c0w.c into an executable named c0w. I then listed the files in the current directory to verify the compilation:
+ls -la
+Finally, I executed the exploit:
+./c0w
+Upon successful execution, I used the following command to attempt privilege escalation:
+/usr/bin/passwd
+This command targets the passwd utility, allowing me to change user passwords and escalate privileges.
+
+After executing the "Dirty COW" exploit, I confirmed my elevated privileges and gathered system information using the following commands:
+whoami
+ifconfig
+uname -a
+
+4.1.10 Privilege Escalation – NFS no-root-squashing
+The NFS no-root-squashing setting can pose significant security risks, as it allows root users on a client machine to have root access to files on the NFS server, which can lead to unauthorized access and privilege escalation. The no-root-squashing option in the NFS exports configuration file permits the root user of a client to have root privileges on the NFS server, exposing sensitive files and directories to unauthorized access.
+To confirm the configuration and check for the presence of no-root-squashing, I ran the following command:
+cat /etc/exports
+This command displays the contents of the exports file, allowing me to identify which directories are shared and whether the no-root-squashing option is enabled.
+
+In my root terminal, I executed the following command to mount the NFS share from the target system, allowing for read and write operations:
+mount -o rw,vers=3 192.168.56.107:/home/muhammad /mnt/nfs_line/
+This command mounts the NFS directory located at /home/muhammad on the target machine (IP: 192.168.56.107) to the local directory /mnt/nfs_line/, enabling access to its contents.
+After successfully mounting the NFS share, I changed into the mounted directory to explore its contents:
+cd /mnt/nfs_line/
+This step allowed me to inspect the files and directories available within the mounted NFS share, providing further insight into potential vulnerabilities and sensitive information.
+
+In the user muhammad’s account, I accessed the contents of the script.sh file to review its implementation:
+cat script.sh
+After examining the script, I copied its content into a new file to ensure that it could be executed by another user. This allowed me to run the script in a context where it could provide additional functionality or escalate privileges as needed.
+
+I edited the script.sh file on my Kali machine using vim:
+vim script.sh
+Next, I modified the file's permissions to make it executable and set the SUID bit, allowing it to run with the privileges of the file owner:
+chmod +sx script.sh
+To verify the changes, I listed the files in the directories of both the muhammad account and my Kali system to confirm that the script was now marked as executable:
+ls -la
+
+I created a new user and assigned a password to this account. This user was then added to the existing password entries in the /etc/passwd directory, allowing for authenticated access to the system.
+
+I used the vim editor to open and modify the passwd file. This allowed me to add the new user's credentials directly to the system's password database.
+vim passwd
+
+After creating a new user and adding it to the password database, I executed the script.sh file, which allowed me to escalate privileges using the credentials of the newly created user.
+
+4.1.11 Post Exploitation
+After gaining root access, I verified control over the target environment by checking network config-uration and system details.
+I ran commands such as whoami, ifconfig, and uname -a to confirm root privileges and review the system's network configuration and kernel details.
+This confirmed successful escalation and full control over the target machine.
